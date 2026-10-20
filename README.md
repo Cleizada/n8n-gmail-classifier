@@ -1,68 +1,33 @@
-# n8n Gmail Classifier (LLM local)
+# Organizador de Gmail com n8n e IA local
 
-Workflow que **classifica e organiza a caixa de entrada do Gmail em massa usando um LLM rodando localmente**, sem enviar e-mails para nenhuma API de terceiros.
+Minha caixa de entrada estava cheia de promoção e spam. Em vez de limpar na mão, montei um fluxo no n8n que lê os e-mails e decide o que fazer com cada um. A classificação é feita por um modelo que roda no meu computador, então o conteúdo dos e-mails não vai para nenhuma API de terceiros.
 
-## Resultado
-
-Processou cerca de **500 e-mails em uma rodada noturna**: lixo foi apagado e o restante recebeu labels automaticamente.
+Numa rodada de uma noite ele passou por cerca de 500 e-mails.
 
 ## Como funciona
 
-```
-Gmail Trigger (e-mails não lidos, a cada 5 min)
-      │
-      ▼
-Ollama + DeepSeek R1 14B (local) ──► classifica cada e-mail
-      │
-      ├── SPAM / PROMOCIONAL ──► apagado
-      └── FINANCEIRO / VAGA / IMPORTANTE / OUTROS ──► recebe label no Gmail
-```
+1. O n8n olha a caixa de entrada a cada 5 minutos, só os e-mails não lidos.
+2. Cada um vai para o DeepSeek R1 14B, rodando no Ollama, que responde com uma categoria e um resumo de uma linha: SPAM, PROMOCIONAL, FINANCEIRO, VAGA DE EMPREGO, IMPORTANTE ou OUTROS.
+3. Um nó Switch lê a categoria. SPAM e PROMOCIONAL são apagados, e o resto ganha uma label no Gmail.
 
-## Stack
-
-- **n8n** (self-hosted)
-- **Ollama** com **DeepSeek R1 14B**, rodando local
-- **Gmail API** (OAuth2)
-
-O modelo lê o *snippet* do e-mail e responde com a categoria e um resumo de uma linha; um nó **Switch** roteia pela categoria.
-
-## Por que um LLM local?
-
-- **Privacidade:** o conteúdo dos e-mails não sai da máquina.
-- **Custo zero por e-mail**, o que importa em lotes grandes.
+O modelo recebe só o trecho de prévia (snippet) do e-mail, não o texto inteiro.
 
 ## Como rodar
 
 1. Instale o [Ollama](https://ollama.com) e baixe o modelo: `ollama pull deepseek-r1:14b`
-2. Em um terminal, exponha o Ollama para o n8n:
-   ```bash
-   OLLAMA_HOST=0.0.0.0 ollama serve
-   ```
+2. Suba o Ollama de um jeito que o n8n alcance: `OLLAMA_HOST=0.0.0.0 ollama serve`
 3. Importe o `n8n-gmail-classifier-workflow.json` no n8n.
-4. Configure a credencial **Gmail OAuth2** no n8n e aponte o nó do Ollama para `http://localhost:11434`.
-5. Crie as labels no Gmail e informe os IDs em cada nó de label.
-6. Rode primeiro em um lote pequeno e **revise as classificações antes de ativar a exclusão automática**.
+4. Crie a credencial do Gmail (OAuth2) e a do Ollama.
+5. Crie as labels no Gmail e coloque o ID de cada uma nos nós correspondentes.
 
-## Problemas resolvidos
+Teste primeiro com poucos e-mails e olhe as classificações antes de deixar a exclusão ligada.
 
-- **Expiração do token OAuth** do Gmail durante execuções longas.
-- **Conexão n8n ↔ Ollama**: foi preciso subir o Ollama com `OLLAMA_HOST=0.0.0.0` para o n8n alcançá-lo.
+## Onde eu travei
 
-## Limitações conhecidas
+- O token do Gmail expirava no meio de execuções longas.
+- O n8n não conseguia falar com o Ollama até eu subir o Ollama com `OLLAMA_HOST=0.0.0.0`.
 
-- O nó de exclusão **apaga a mensagem definitivamente**, então vale revisar as classificações antes.
-- O DeepSeek R1 é um modelo de raciocínio e pode incluir texto de "pensamento" na resposta, o que pode confundir o Switch. Uma melhoria é extrair só a primeira linha da resposta antes de rotear.
-- A classificação usa só o snippet, não o e-mail inteiro.
+## Cuidados
 
-## Estrutura
-
-```
-├── n8n-gmail-classifier-workflow.json   # workflow exportado (sem credenciais)
-├── README.md
-└── docs/
-    └── fluxo.png
-```
-
-## Autor
-
-Cleidson Soares — [LinkedIn](https://www.linkedin.com/in/cleidson-soares)
+- O nó de exclusão apaga a mensagem de vez, sem passar pela lixeira. Por isso eu prefiro revisar antes.
+- O DeepSeek R1 "pensa em voz alta" e às vezes isso vem junto na resposta, o que pode confundir o Switch. O ajuste que eu ainda quero fazer é pegar só a primeira linha da resposta antes de rotear.
